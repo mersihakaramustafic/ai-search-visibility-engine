@@ -1,0 +1,73 @@
+# Configuration for scripts/generate_initial_dataset.py
+#
+# Change counts, providers, repetitions, or the intent distribution here; the
+# generator reads everything from this file. Relative paths resolve against the
+# repository root.
+
+dataset_version: "0.1.0"
+industry: b2b_saas_crm
+market: US
+language: en
+
+paths:
+  authored_dir: data/authored
+  output_dir: data/processed
+
+brands:
+  expected_count: 10
+  primary_brand_id: hubspot
+
+queries:
+  # Must equal the sum of intent_distribution.
+  total: 100
+  # Queries are taken in authored order from data/authored/queries.yaml,
+  # the first N per intent. Reducing a count drops the later queries of that
+  # intent; increasing it requires authoring more queries first.
+  intent_distribution:
+    category_discovery: 20
+    use_case: 20
+    brand_comparison: 20
+    features_integrations: 20
+    pricing_purchase: 20
+  # Quality guards.
+  min_brand_neutral_share: 0.60
+  max_single_brand_share_of_branded: 0.35
+  near_duplicate_jaccard_threshold: 0.75
+  max_family_size: 6
+  # Queries must not name the AI providers being compared (case-insensitive,
+  # whole-word match).
+  forbidden_terms: [openai, chatgpt, gpt, gemini, bard, "ai overviews"]
+
+collection:
+  repetitions: 3
+  initial_status: pending
+  providers:
+    - id: openai
+      search_enabled: true
+    - id: gemini
+      search_enabled: true
+
+recommendation_candidates:
+  total: 30
+  action_types:
+    - owned_content_optimization
+    - editorial_outreach
+    - community_visibility
+    - directory_listing
+  # Max allowed difference between the most and least frequent action type.
+  max_action_type_imbalance: 1
+  evidence_patterns:
+    - competitor_coverage_gap
+    - cited_comparison_page
+    - missing_directory_listing
+    - recurring_user_question
+  effort_levels: [low, medium, high]
+  # Wording that would overstate what a synthetic candidate is (case-insensitive).
+  forbidden_claim_phrases:
+    - will improve
+    - will increase
+    - guarantee
+    - proven
+    - we found
+    - data shows
+    - results show
