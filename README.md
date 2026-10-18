@@ -4,7 +4,11 @@ Portfolio project for analyzing AI search visibility: compare how OpenAI and Goo
 
 ## Status
 
-Stage 1 (done): authored brand and query datasets, the collection plan, and synthetic recommendation seeds. No API collection, models, or dashboard yet.
+- Stage 1 (done): authored brand and query datasets, the collection plan, and synthetic recommendation seeds.
+- Stage 2 (done): Supabase PostgreSQL schema (Alembic migrations) and CSV import.
+- Stage 3: OpenAI and Gemini answer collection into `observations`. See [docs/collection_pipeline.md](docs/collection_pipeline.md).
+
+No mention extraction, recommendation engine, models, or dashboard yet.
 
 ## Generate the initial datasets
 
@@ -35,7 +39,28 @@ data/authored/*.yaml            hand-written brands, queries, query families, sy
 data/processed/*.csv            generated outputs (do not edit by hand)
 scripts/generate_initial_dataset.py
 tests/test_initial_dataset.py
+configs/collection.yaml         models, timeouts, retries, pilot queries for collection
+visibility_db/                  database connection settings
+visibility_collector/           provider clients, collection runner, repository
+migrations/                     Alembic schema migrations
+scripts/import_dataset.py       load the CSVs into the database
+scripts/collect_responses.py    collect OpenAI / Gemini answers
 docs/dataset_design.md          column definitions, design rationale, limitations
+docs/collection_pipeline.md     how collection works and how to verify it
 ```
+
+## Collect AI answers
+
+Needs `DATABASE_URL`, `OPENAI_API_KEY` and `GEMINI_API_KEY` in `.env` (see `.env.example`).
+
+```bash
+.venv/bin/python -m alembic upgrade head
+.venv/bin/python scripts/import_dataset.py
+.venv/bin/python scripts/collect_responses.py --mode pilot --dry-run   # preview, no API calls
+.venv/bin/python scripts/collect_responses.py --mode pilot             # 3-5 queries per provider
+.venv/bin/python scripts/collect_responses.py --mode full              # all remaining requests
+```
+
+Settings are in `configs/collection.yaml`. See [docs/collection_pipeline.md](docs/collection_pipeline.md) for retries, what is recorded, and SQL to verify results in Supabase.
 
 See [docs/dataset_design.md](docs/dataset_design.md) for what each file means and which data is authored, planned, synthetic, or collected.

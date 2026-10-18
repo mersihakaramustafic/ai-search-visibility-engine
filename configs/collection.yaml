@@ -1,0 +1,34 @@
+# Settings for scripts/collect_responses.py (OpenAI / Gemini collection).
+#
+# API keys are never stored here: each provider names the environment variable
+# that holds its key. Model IDs are the ones requested; the ID the API reports
+# back is what gets recorded in observations.model_id.
+
+providers:
+  openai:
+    # Dated snapshot so repeated collections hit the same model.
+    model: gpt-5.5-2026-04-23
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 180
+    # Reasoning models spend part of this budget on hidden reasoning, so keep it generous.
+    max_output_tokens: 16000
+    concurrency: 5
+    web_search:
+      # Pass collection_requests.market as the approximate user country.
+      use_market_location: true
+  gemini:
+    model: gemini-3.5-flash
+    api_key_env: GEMINI_API_KEY
+    timeout_seconds: 180
+    max_output_tokens: 16000
+    concurrency: 5
+
+retry:
+  # Total API calls per request in one collection run, including the first.
+  max_attempts: 4
+  initial_backoff_seconds: 2
+  max_backoff_seconds: 60
+
+pilot:
+  # 3-5 queries, one per intent; every pending run of these queries is collected.
+  query_ids: [Q001, Q021, Q041, Q061, Q081]
