@@ -1,0 +1,17 @@
+matching:
+  ambiguous_aliases:
+    close: [Close]
+
+  extra_ambiguous_forms:
+    monday_crm: [monday.com, Monday.com, monday, Monday]
+    freshsales: [Freshworks]
+
+  exclusions:
+    - SAP Sales Cloud
+    - Oracle Sales Cloud
+    - Bigin by Zoho
+    - Zoho (?:One|Desk|Books|Bigin|Analytics|Voice|Projects|Sign|Inventory|Campaigns|Mail|Flow|SalesIQ|Forms|Survey|People|Recruit|Expense|Billing|Invoice|Creator|Social|Workplace|WorkDrive|Cliq|Marketing Plus)
+
+  max_candidates_per_brand: 20
+
+  snippet_chars: 120
