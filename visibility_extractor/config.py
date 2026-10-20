@@ -30,8 +30,16 @@ class MatchingConfig:
 
 
 @dataclass(frozen=True)
+class CitationConfig:
+    # brand_id -> substrings; a citation on that brand's domain counts as the brand's
+    # only if its lowercased "host/path" contains one of them.
+    brand_url_rules: dict[str, tuple[str, ...]]
+
+
+@dataclass(frozen=True)
 class ExtractionConfig:
     matching: MatchingConfig
+    citations: CitationConfig
 
 
 def _brand_forms(value: Any, label: str, errors: list[str]) -> dict[str, tuple[str, ...]]:
@@ -80,14 +88,25 @@ def parse_matching(raw: Any, errors: list[str]) -> MatchingConfig:
     )
 
 
+def parse_citations(raw: Any, errors: list[str]) -> CitationConfig:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        errors.append("citations must be a mapping")
+        raw = {}
+    rules = _brand_forms(raw.get("brand_url_rules"), "citations.brand_url_rules", errors)
+    return CitationConfig(brand_url_rules={b: tuple(r.lower() for r in rs) for b, rs in rules.items()})
+
+
 def parse_config(raw: Any) -> ExtractionConfig:
     if not isinstance(raw, dict):
         raise ExtractionConfigError(["config must be a mapping"])
     errors: list[str] = []
     matching = parse_matching(raw.get("matching"), errors)
+    citations = parse_citations(raw.get("citations"), errors)
     if errors:
         raise ExtractionConfigError(errors)
-    return ExtractionConfig(matching=matching)
+    return ExtractionConfig(matching=matching, citations=citations)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> ExtractionConfig:

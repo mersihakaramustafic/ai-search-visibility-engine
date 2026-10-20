@@ -15,3 +15,9 @@ matching:
   max_candidates_per_brand: 20
 
   snippet_chars: 120
+
+citations:
+  brand_url_rules:
+    zoho_crm: [/crm]
+    monday_crm: [/crm]
+    freshsales: [/crm, crmsupport., freshsales]
