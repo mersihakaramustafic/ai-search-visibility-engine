@@ -11,6 +11,7 @@ from visibility_extractor.config import ExtractionConfigError, load_config, pars
 from visibility_extractor.matching import BrandMatcher, aggregate_mentions
 
 RAW = {
+    "extractor_version": "test-v1",
     "matching": {
         "ambiguous_aliases": {"close": ["Close"]},
         "extra_ambiguous_forms": {"monday_crm": ["monday.com", "Monday.com", "monday", "Monday"],
@@ -117,7 +118,7 @@ def test_extra_forms_are_candidates_but_full_aliases_confirm():
 
 
 def test_candidates_over_the_cap_are_dropped_and_counted():
-    config = parse_config({"matching": {**RAW["matching"], "max_candidates_per_brand": 2}}).matching
+    config = parse_config({**RAW, "matching": {**RAW["matching"], "max_candidates_per_brand": 2}}).matching
     result = BrandMatcher(BRANDS, config).match("Close. Close. Close. monday.")
     assert [o.text for o in result.candidates] == ["Close", "Close", "monday"]
     assert result.candidates_dropped == 1
@@ -169,6 +170,6 @@ def test_invalid_config_is_reported(change, message):
 
 
 def test_config_must_match_the_brands_table():
-    bad = parse_config({"matching": {**RAW["matching"], "ambiguous_aliases": {"close": ["Clsoe"], "nope": ["X"]}}})
+    bad = parse_config({**RAW, "matching": {**RAW["matching"], "ambiguous_aliases": {"close": ["Clsoe"], "nope": ["X"]}}})
     with pytest.raises(ValueError, match="unknown brand_id 'nope'.*'Clsoe' is not one of its aliases"):
         BrandMatcher(BRANDS, bad.matching)

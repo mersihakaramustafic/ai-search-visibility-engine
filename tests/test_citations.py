@@ -189,15 +189,15 @@ def test_normalize_domain(value, expected):
 
 # --- config ---------------------------------------------------------------------------------
 
+MINIMAL = {"extractor_version": "test-v1", "matching": {"max_candidates_per_brand": 1, "snippet_chars": 1}}
+
 
 def test_rules_must_name_known_brands():
-    config = parse_config({"matching": {"max_candidates_per_brand": 1, "snippet_chars": 1},
-                           "citations": {"brand_url_rules": {"zoho": ["/crm"]}}})
+    config = parse_config({**MINIMAL, "citations": {"brand_url_rules": {"zoho": ["/crm"]}}})
     with pytest.raises(ValueError, match="zoho"):
         DomainAttributor(BRANDS, config.citations)
 
 
 def test_invalid_rules_are_reported():
     with pytest.raises(ExtractionConfigError, match="citations.brand_url_rules"):
-        parse_config({"matching": {"max_candidates_per_brand": 1, "snippet_chars": 1},
-                      "citations": {"brand_url_rules": {"zoho_crm": "/crm"}}})
+        parse_config({**MINIMAL, "citations": {"brand_url_rules": {"zoho_crm": "/crm"}}})

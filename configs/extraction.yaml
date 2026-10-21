@@ -1,3 +1,5 @@
+extractor_version: rules-v1
+
 matching:
   ambiguous_aliases:
     close: [Close]

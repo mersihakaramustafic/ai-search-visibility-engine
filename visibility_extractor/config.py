@@ -11,6 +11,7 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "extraction.yaml"
+VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
 class ExtractionConfigError(Exception):
@@ -38,6 +39,7 @@ class CitationConfig:
 
 @dataclass(frozen=True)
 class ExtractionConfig:
+    extractor_version: str
     matching: MatchingConfig
     citations: CitationConfig
 
@@ -102,11 +104,14 @@ def parse_config(raw: Any) -> ExtractionConfig:
     if not isinstance(raw, dict):
         raise ExtractionConfigError(["config must be a mapping"])
     errors: list[str] = []
+    version = raw.get("extractor_version")
+    if not isinstance(version, str) or not VERSION_RE.match(version):
+        errors.append("extractor_version must be a short label like 'rules-v1' (letters, digits, '.', '_', '-')")
     matching = parse_matching(raw.get("matching"), errors)
     citations = parse_citations(raw.get("citations"), errors)
     if errors:
         raise ExtractionConfigError(errors)
-    return ExtractionConfig(matching=matching, citations=citations)
+    return ExtractionConfig(extractor_version=version, matching=matching, citations=citations)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> ExtractionConfig:
