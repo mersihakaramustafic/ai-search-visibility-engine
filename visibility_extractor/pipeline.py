@@ -7,7 +7,7 @@ from typing import Any
 
 from visibility_extractor.citations import Citation, DomainAttributor, extract_citations
 from visibility_extractor.config import ExtractionConfig
-from visibility_extractor.matching import Brand, BrandMatcher, MentionSummary, aggregate_mentions
+from visibility_extractor.matching import Brand, BrandMatcher, MentionSummary, Occurrence, aggregate_mentions
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,25 @@ class Observation:
     provider: str
     response_text: str
     grounding_metadata: Any
+    query_text: str = ""
+
+
+@dataclass(frozen=True)
+class LLMRun:
+    status: str  # 'not_needed' | 'succeeded' | 'failed'
+    model_requested: str
+    prompt_version: str
+    schema_version: str
+    model_id: str | None = None
+    # Last output: the applied one on success, the rejected one on failure (raw text if not JSON).
+    output: Any = None
+    attempts: int = 0
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    estimated_cost_usd: float | None = None
+    latency_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +51,12 @@ class Extraction:
     citations: list[Citation] = field(default_factory=list)
     error_type: str | None = None
     error_message: str | None = None
+    strategy: str = "rules_only"
+    llm: LLMRun | None = None
+    target_brand_recommended: bool | None = None
+    # Kept in memory for the LLM step, never stored.
+    confirmed: list[Occurrence] = field(default_factory=list)
+    candidates: list[Occurrence] = field(default_factory=list)
 
 
 def validate(text: str, mentions: list[MentionSummary], citations: list[Citation],
@@ -60,6 +85,7 @@ def validate(text: str, mentions: list[MentionSummary], citations: list[Citation
 class RulesExtractor:
     def __init__(self, brands: list[Brand], config: ExtractionConfig):
         self.version = config.extractor_version
+        self.brands = brands
         self.snippet_chars = config.matching.snippet_chars
         self.matcher = BrandMatcher(brands, config.matching)
         self.attributor = DomainAttributor(brands, config.citations)
@@ -99,4 +125,6 @@ class RulesExtractor:
             candidate_count=len(match.candidates),
             mentions=mentions,
             citations=cites.citations,
+            confirmed=match.confirmed,
+            candidates=match.candidates,
         )

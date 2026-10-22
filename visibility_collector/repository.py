@@ -178,7 +178,8 @@ class Repository:
             INSERT INTO observations (
                 request_id, collection_run_id, attempt_number, provider, model_id, request_params,
                 search_config, status, response_text, raw_response, grounding_metadata, error_type,
-                error_message, latency_ms, input_tokens, output_tokens, requested_at, responded_at)
+                error_message, collection_latency_ms, collection_input_tokens, collection_output_tokens,
+                requested_at, responded_at)
             VALUES (
                 :request_id, :collection_run_id,
                 (SELECT coalesce(max(attempt_number), 0) + 1 FROM observations WHERE request_id = :request_id),

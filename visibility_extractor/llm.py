@@ -85,7 +85,6 @@ def build_request(observation_id: int, query_text: str, response_text: str, bran
 class LLMCall:
     output_text: str
     model_id: str | None
-    request_params: dict[str, Any]  # without the instructions and answer text
     input_tokens: int | None
     cached_input_tokens: int | None
     output_tokens: int | None
@@ -155,7 +154,6 @@ class LLMClassifier:
         return LLMCall(
             output_text=text,
             model_id=response.model,
-            request_params=logged,
             input_tokens=usage.input_tokens if usage else None,
             cached_input_tokens=input_details.cached_tokens if input_details else None,
             output_tokens=usage.output_tokens if usage else None,
@@ -164,8 +162,12 @@ class LLMClassifier:
         )
 
 
+# Models quote the words but drop markdown emphasis and may straighten typographic quotes.
+_QUOTE_NOISE = str.maketrans({"*": None, "`": None, "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"'})
+
+
 def _normalized(text: str) -> str:
-    return " ".join(text.split())
+    return " ".join(text.translate(_QUOTE_NOISE).split())
 
 
 def _check_ids(items: list[dict[str, Any]], key: str, expected: list[Any], errors: list[str]) -> None:
@@ -188,7 +190,7 @@ def _check_evidence(quote: str, label: str, answer: str, errors: list[str], must
         errors.append(f"{label}: evidence longer than {MAX_EVIDENCE_CHARS} characters")
     elif _normalized(quote) not in answer:
         errors.append(f"{label}: evidence is not a quote from the answer")
-    elif must_contain and must_contain not in quote:
+    elif must_contain and must_contain not in _normalized(quote):
         errors.append(f"{label}: evidence does not contain {must_contain!r}")
 
 

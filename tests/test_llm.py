@@ -113,14 +113,13 @@ def api_error(cls, status, headers=None, body=None):
 
 def test_request_uses_configured_model_strict_schema_and_low_effort():
     client = FakeClient(fake_response(json.dumps(good_output())))
-    call = classifier(client).classify(request())
+    classifier(client).classify(request())
     [params] = client.calls
     assert params["model"] == "gpt-5.6-luna"
     assert params["text"]["format"] == {"type": "json_schema", "name": "brand_classification",
                                         "schema": SCHEMA, "strict": True}
     assert params["reasoning"] == {"effort": "low"} and params["store"] is False
     assert "Use only the answer text" in params["instructions"]
-    assert "input" not in call.request_params and call.request_params["schema"] == "brand_classification"
 
 
 def test_usage_is_read_including_cached_and_reasoning_tokens():
@@ -233,3 +232,21 @@ def test_cost_counts_cached_tokens_at_the_cached_price():
 
 def test_configured_price_is_used_for_the_configured_model():
     assert CONFIG.pricing[CONFIG.llm.model] == Price(0.20, 0.02, 1.20)
+
+
+# Real cases from the pilot: the model drops ** and may straighten quotes, but must not paraphrase.
+MARKDOWN_ANSWER = ("For most growing B2B companies, I’d pick **HubSpot first**. Add **Pipedrive** if your needs "
+                   "are mostly sales-pipeline management. Team already using monday.com heavily:** **monday CRM**")
+
+
+@pytest.mark.parametrize("quote, ok", [
+    ("Pipedrive if your needs are mostly sales-pipeline management", True),
+    ("I'd pick HubSpot first", True),
+    ("Team already using monday.com heavily: **monday CRM**", True),
+    ("HubSpot is the better default", False),
+])
+def test_quotes_may_drop_markdown_but_not_change_words(quote, ok):
+    req = ClassificationRequest(1, "q", MARKDOWN_ANSWER, [{"brand_id": "hubspot", "name": "HubSpot", "aliases": []}], [])
+    out = {"brands": [{"brand_id": "hubspot", "sentiment": "positive", "recommendation": "primary", "evidence": quote}],
+           "candidates": []}
+    assert (validate_output(json.dumps(out), req, SCHEMA)[0] is not None) is ok

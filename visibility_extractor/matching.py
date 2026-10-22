@@ -44,6 +44,10 @@ class MentionSummary:
     matched_alias: str
     context_snippet: str
     match_method: str  # 'alias' | 'llm_disambiguated'
+    # Filled by the LLM step; None for rules-only extractions.
+    sentiment: str | None = None
+    recommendation: str | None = None
+    classification_evidence: str | None = None
 
 
 def _whole_word(form: str, case_sensitive: bool) -> re.Pattern[str]:

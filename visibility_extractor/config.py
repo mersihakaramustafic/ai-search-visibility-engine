@@ -11,11 +11,14 @@ from typing import Any
 
 import yaml
 
+from visibility_collector.config import RetryConfig
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "extraction.yaml"
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 MODEL_ENV_VAR = "EXTRACTION_MODEL"
 REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
+STRATEGIES = ("rules_only", "rules_and_llm")
 
 
 class ExtractionConfigError(Exception):
@@ -50,6 +53,7 @@ class LLMConfig:
     reasoning_effort: str
     prompt_version: str
     schema_version: str
+    concurrency: int = 1
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,13 @@ class ExtractionConfig:
     citations: CitationConfig
     llm: LLMConfig | None = None
     pricing: dict[str, Price] = field(default_factory=dict)
+    # source provider -> 'rules_only' | 'rules_and_llm'; providers not listed are rules_only
+    strategy: dict[str, str] = field(default_factory=dict)
+    retry: RetryConfig = field(default_factory=RetryConfig)
+    pilot_per_provider: int = 8
+
+    def strategy_for(self, provider: str) -> str:
+        return self.strategy.get(provider, "rules_only")
 
 
 def _brand_forms(value: Any, label: str, errors: list[str]) -> dict[str, tuple[str, ...]]:
@@ -151,7 +162,35 @@ def parse_llm(raw: Any, env: Mapping[str, str], errors: list[str]) -> LLMConfig 
         reasoning_effort=effort,
         prompt_version=_label(raw.get("prompt_version"), "llm.prompt_version", errors),
         schema_version=_label(raw.get("schema_version"), "llm.schema_version", errors),
+        concurrency=_positive_int(raw.get("concurrency", 1), "llm.concurrency", errors),
     )
+
+
+def parse_strategy(raw: Any, has_llm: bool, errors: list[str]) -> dict[str, str]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or not all(v in STRATEGIES for v in raw.values()):
+        errors.append(f"strategy must map providers to one of {list(STRATEGIES)}")
+        return {}
+    if not has_llm and "rules_and_llm" in raw.values():
+        errors.append("strategy rules_and_llm needs an llm section")
+    return dict(raw)
+
+
+def parse_retry(raw: Any, errors: list[str]) -> RetryConfig:
+    if raw is None:
+        return RetryConfig()
+    if not isinstance(raw, dict):
+        errors.append("retry must be a mapping")
+        return RetryConfig()
+    numbers_ok = all(isinstance(raw.get(k), (int, float)) and not isinstance(raw.get(k), bool) and raw[k] > 0
+                     for k in ("initial_backoff_seconds", "max_backoff_seconds"))
+    if not numbers_ok:
+        errors.append("retry backoff seconds must be positive numbers")
+        return RetryConfig()
+    return RetryConfig(max_attempts=_positive_int(raw.get("max_attempts"), "retry.max_attempts", errors),
+                       initial_backoff_seconds=float(raw["initial_backoff_seconds"]),
+                       max_backoff_seconds=float(raw["max_backoff_seconds"]))
 
 
 def parse_pricing(raw: Any, errors: list[str]) -> dict[str, Price]:
@@ -182,10 +221,15 @@ def parse_config(raw: Any, env: Mapping[str, str] | None = None) -> ExtractionCo
     citations = parse_citations(raw.get("citations"), errors)
     llm = parse_llm(raw.get("llm"), env or {}, errors)
     pricing = parse_pricing(raw.get("pricing"), errors)
+    strategy = parse_strategy(raw.get("strategy"), llm is not None, errors)
+    retry = parse_retry(raw.get("retry"), errors)
+    pilot = raw.get("pilot") or {}
+    pilot_per_provider = _positive_int(pilot.get("observations_per_provider", 8) if isinstance(pilot, dict) else None,
+                                       "pilot.observations_per_provider", errors)
     if errors:
         raise ExtractionConfigError(errors)
-    return ExtractionConfig(extractor_version=version, matching=matching, citations=citations,
-                            llm=llm, pricing=pricing)
+    return ExtractionConfig(extractor_version=version, matching=matching, citations=citations, llm=llm,
+                            pricing=pricing, strategy=strategy, retry=retry, pilot_per_provider=pilot_per_provider)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> ExtractionConfig:
