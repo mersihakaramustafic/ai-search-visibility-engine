@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,8 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "extraction.yaml"
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+MODEL_ENV_VAR = "EXTRACTION_MODEL"
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high")
 
 
 class ExtractionConfigError(Exception):
@@ -38,10 +42,30 @@ class CitationConfig:
 
 
 @dataclass(frozen=True)
+class LLMConfig:
+    model: str
+    api_key_env: str
+    timeout_seconds: int
+    max_output_tokens: int
+    reasoning_effort: str
+    prompt_version: str
+    schema_version: str
+
+
+@dataclass(frozen=True)
+class Price:
+    input: float
+    cached_input: float
+    output: float
+
+
+@dataclass(frozen=True)
 class ExtractionConfig:
     extractor_version: str
     matching: MatchingConfig
     citations: CitationConfig
+    llm: LLMConfig | None = None
+    pricing: dict[str, Price] = field(default_factory=dict)
 
 
 def _brand_forms(value: Any, label: str, errors: list[str]) -> dict[str, tuple[str, ...]]:
@@ -100,7 +124,54 @@ def parse_citations(raw: Any, errors: list[str]) -> CitationConfig:
     return CitationConfig(brand_url_rules={b: tuple(r.lower() for r in rs) for b, rs in rules.items()})
 
 
-def parse_config(raw: Any) -> ExtractionConfig:
+def _label(value: Any, label: str, errors: list[str]) -> str:
+    if not isinstance(value, str) or not VERSION_RE.match(value):
+        errors.append(f"{label} must be a short label (letters, digits, '.', '_', '-')")
+        return ""
+    return value
+
+
+def parse_llm(raw: Any, env: Mapping[str, str], errors: list[str]) -> LLMConfig | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        errors.append("llm must be a mapping")
+        return None
+    effort = raw.get("reasoning_effort")
+    if effort not in REASONING_EFFORTS:
+        errors.append(f"llm.reasoning_effort must be one of {list(REASONING_EFFORTS)}")
+    api_key_env = raw.get("api_key_env")
+    if not isinstance(api_key_env, str) or not api_key_env:
+        errors.append("llm.api_key_env must name an environment variable")
+    return LLMConfig(
+        model=_label(env.get(MODEL_ENV_VAR) or raw.get("model"), "llm.model", errors),
+        api_key_env=api_key_env,
+        timeout_seconds=_positive_int(raw.get("timeout_seconds"), "llm.timeout_seconds", errors),
+        max_output_tokens=_positive_int(raw.get("max_output_tokens"), "llm.max_output_tokens", errors),
+        reasoning_effort=effort,
+        prompt_version=_label(raw.get("prompt_version"), "llm.prompt_version", errors),
+        schema_version=_label(raw.get("schema_version"), "llm.schema_version", errors),
+    )
+
+
+def parse_pricing(raw: Any, errors: list[str]) -> dict[str, Price]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        errors.append("pricing must map model names to prices")
+        return {}
+    prices = {}
+    for model, p in raw.items():
+        keys = ("input", "cached_input", "output")
+        if not isinstance(p, dict) or set(p) != set(keys) or not all(
+                isinstance(p[k], (int, float)) and not isinstance(p[k], bool) and p[k] >= 0 for k in keys):
+            errors.append(f"pricing.{model} needs non-negative input, cached_input and output")
+            continue
+        prices[model] = Price(**{k: float(p[k]) for k in keys})
+    return prices
+
+
+def parse_config(raw: Any, env: Mapping[str, str] | None = None) -> ExtractionConfig:
     if not isinstance(raw, dict):
         raise ExtractionConfigError(["config must be a mapping"])
     errors: list[str] = []
@@ -109,13 +180,19 @@ def parse_config(raw: Any) -> ExtractionConfig:
         errors.append("extractor_version must be a short label like 'rules-v1' (letters, digits, '.', '_', '-')")
     matching = parse_matching(raw.get("matching"), errors)
     citations = parse_citations(raw.get("citations"), errors)
+    llm = parse_llm(raw.get("llm"), env or {}, errors)
+    pricing = parse_pricing(raw.get("pricing"), errors)
     if errors:
         raise ExtractionConfigError(errors)
-    return ExtractionConfig(extractor_version=version, matching=matching, citations=citations)
+    return ExtractionConfig(extractor_version=version, matching=matching, citations=citations,
+                            llm=llm, pricing=pricing)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> ExtractionConfig:
     if not path.is_file():
         raise ExtractionConfigError([f"{path} not found"])
+    from visibility_db.config import load_dotenv_file
+
+    load_dotenv_file()  # EXTRACTION_MODEL may be set in .env
     with path.open(encoding="utf-8") as f:
-        return parse_config(yaml.safe_load(f))
+        return parse_config(yaml.safe_load(f), os.environ)

@@ -23,3 +23,18 @@ citations:
     zoho_crm: [/crm]
     monday_crm: [/crm]
     freshsales: [/crm, crmsupport., freshsales]
+
+llm:
+  model: gpt-5.6-luna
+  api_key_env: OPENAI_API_KEY
+  timeout_seconds: 60
+  max_output_tokens: 4000
+  reasoning_effort: low
+  prompt_version: p1
+  schema_version: s1
+
+pricing:
+  gpt-5.6-luna:
+    input: 0.20
+    cached_input: 0.02
+    output: 1.20

@@ -1,0 +1,49 @@
+{
+  "title": "brand_classification",
+  "description": "LLM output for one AI answer. Every brand and candidate sent in the request must appear exactly once. Evidence must be copied word for word from the answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brands", "candidates"],
+  "properties": {
+    "brands": {
+      "description": "One entry per brand_id in the request: how the answer talks about that brand.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["brand_id", "sentiment", "recommendation", "evidence"],
+        "properties": {
+          "brand_id": {"type": "string", "description": "A brand_id from the request."},
+          "sentiment": {
+            "type": "string",
+            "enum": ["positive", "neutral", "negative"],
+            "description": "Overall tone of the answer towards the brand. neutral unless clearly positive or negative."
+          },
+          "recommendation": {
+            "type": "string",
+            "enum": ["primary", "conditional", "none"],
+            "description": "primary: a top pick for the question. conditional: recommended for a stated situation or type of user. none: only mentioned, compared, or advised against."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "The shortest exact quote from the answer that supports sentiment and recommendation."
+          }
+        }
+      }
+    },
+    "candidates": {
+      "description": "One entry per candidate_id in the request: whether that ambiguous word refers to the brand.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["candidate_id", "is_brand", "evidence"],
+        "properties": {
+          "candidate_id": {"type": "integer", "description": "A candidate_id from the request."},
+          "is_brand": {"type": "boolean", "description": "true only if this occurrence names the brand's product or company."},
+          "evidence": {"type": "string", "description": "Exact quote from the answer around this occurrence."}
+        }
+      }
+    }
+  }
+}
