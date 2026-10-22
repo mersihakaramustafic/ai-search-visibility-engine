@@ -23,7 +23,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "schemas" / "brand_classification.schema.json"
 MAX_EVIDENCE_CHARS = 300
 
-INSTRUCTIONS = """\
+_CANDIDATE_RULES = """\
+For each item in "candidates" (an ambiguous word at a character offset in the answer):
+- is_brand: true only if that occurrence names the brand's product or company;
+  false for ordinary words such as "close a deal" or "every Monday".
+- evidence: an exact quote from the answer that contains that occurrence.
+
+Copy quotes character for character. Return every brand and every candidate exactly once."""
+
+# Selected by llm.prompt_version. Old versions stay so stored results remain reproducible.
+PROMPTS = {
+    "p1": """\
 You classify how one AI-generated answer talks about software brands.
 Use only the answer text you are given, never outside knowledge about the brands.
 
@@ -35,12 +45,44 @@ For each item in "brands":
     none         only mentioned, listed without endorsement, used for comparison, or advised against
 - evidence: the shortest exact quote from the answer that supports both labels.
 
-For each item in "candidates" (an ambiguous word at a character offset in the answer):
-- is_brand: true only if that occurrence names the brand's product or company;
-  false for ordinary words such as "close a deal" or "every Monday".
-- evidence: an exact quote from the answer that contains that occurrence.
+""" + _CANDIDATE_RULES,
+    "p2": """\
+You classify how one AI-generated answer talks about software brands.
+Use only the answer text you are given, never outside knowledge about the brands.
 
-Copy quotes character for character. Return every brand and every candidate exactly once."""
+For each item in "brands":
+- sentiment: the answer's tone towards that brand. Use neutral unless it is clearly positive or clearly negative.
+- recommendation, judged against the user's question as asked:
+    primary      the answer names it as its overall, default or first choice for that question,
+                 without limiting it to a particular situation, segment or type of user
+    conditional  recommended only for a stated situation, segment or type of user, e.g. "choose X if ...",
+                 "best for enterprises", or one entry in a list of "best for <segment>" picks
+    none         only mentioned, described, listed without endorsement, used for comparison, or advised against
+  If unsure between primary and conditional, choose conditional.
+- evidence: the shortest exact quote from the answer that supports both labels;
+  prefer a quote that contains the brand's name.
+
+""" + _CANDIDATE_RULES,
+    "p3": """\
+You classify how one AI-generated answer talks about software brands.
+Use only the answer text you are given, never outside knowledge about the brands.
+
+For each item in "brands":
+- sentiment: the answer's tone towards that brand. Use neutral unless it is clearly positive or clearly negative.
+- recommendation, judged against the user's question as asked:
+    primary      the answer names it as its overall, default or first choice for that question,
+                 without limiting it to a particular situation, segment or type of user
+    conditional  recommended only for a stated situation, segment or type of user, e.g. "choose X if ...",
+                 "best for enterprises", or one entry in a list of "best for <segment>" picks
+    none         only mentioned, described, listed without endorsement, used for comparison, or advised against;
+                 also when it is named only as an example of a category ("tools such as X, Y and Z"),
+                 even if that category is recommended
+  If unsure between primary and conditional, choose conditional.
+- evidence: the shortest exact quote from the answer that supports both labels;
+  prefer a quote that contains the brand's name.
+
+""" + _CANDIDATE_RULES,
+}
 
 
 def load_schema() -> dict[str, Any]:
@@ -95,7 +137,10 @@ class LLMCall:
 class LLMClassifier:
     def __init__(self, client: Any, config: LLMConfig, schema: dict[str, Any] | None = None):
         self._client = client
+        if config.prompt_version not in PROMPTS:
+            raise ExtractionConfigError([f"llm.prompt_version {config.prompt_version!r} is not one of {list(PROMPTS)}"])
         self.config = config
+        self.instructions = PROMPTS[config.prompt_version]
         self.schema = schema or load_schema()
 
     @classmethod
@@ -116,7 +161,7 @@ class LLMClassifier:
     def request_params(self, request: ClassificationRequest) -> dict[str, Any]:
         return {
             "model": self.config.model,
-            "instructions": INSTRUCTIONS,
+            "instructions": self.instructions,
             "input": request.payload(),
             "text": {"format": {"type": "json_schema", "name": self.schema["title"],
                                 "schema": self.schema, "strict": True}},

@@ -1,4 +1,4 @@
-extractor_version: rules-llm-v1
+extractor_version: rules-llm-v3
 
 strategy:
   openai: rules_and_llm
@@ -34,7 +34,7 @@ llm:
   timeout_seconds: 60
   max_output_tokens: 4000
   reasoning_effort: low
-  prompt_version: p1
+  prompt_version: p3
   schema_version: s1
   concurrency: 4
 

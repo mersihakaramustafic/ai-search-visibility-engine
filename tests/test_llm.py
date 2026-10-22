@@ -250,3 +250,20 @@ def test_quotes_may_drop_markdown_but_not_change_words(quote, ok):
     out = {"brands": [{"brand_id": "hubspot", "sentiment": "positive", "recommendation": "primary", "evidence": quote}],
            "candidates": []}
     assert (validate_output(json.dumps(out), req, SCHEMA)[0] is not None) is ok
+
+
+def test_prompt_follows_the_configured_version():
+    from dataclasses import replace
+
+    from visibility_extractor.llm import PROMPTS
+
+    for version in PROMPTS:
+        params = classifier_for(replace(CONFIG.llm, prompt_version=version)).request_params(request())
+        assert params["instructions"] == PROMPTS[version]
+    assert PROMPTS["p1"] != PROMPTS["p2"]
+    with pytest.raises(ExtractionConfigError, match="prompt_version 'p9'"):
+        classifier_for(replace(CONFIG.llm, prompt_version="p9"))
+
+
+def classifier_for(llm_config):
+    return LLMClassifier(FakeClient(), llm_config, SCHEMA)
