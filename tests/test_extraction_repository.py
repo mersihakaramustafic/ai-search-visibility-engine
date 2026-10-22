@@ -13,12 +13,14 @@ from dataclasses import replace
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from visibility_extractor.config import load_config
 from visibility_extractor.pipeline import LLMRun, RulesExtractor
 from visibility_extractor.repository import ExtractionRepository
 
-pytestmark = pytest.mark.skipif(os.environ.get("RUN_DB_TESTS") != "1", reason="set RUN_DB_TESTS=1 to run")
+pytestmark = [pytest.mark.db,
+              pytest.mark.skipif(os.environ.get("RUN_DB_TESTS") != "1", reason="set RUN_DB_TESTS=1 to run")]
 
 VERSION = "test-rollback"
 
@@ -110,3 +112,17 @@ def test_llm_labels_and_provenance_are_stored(conn, repo):
                                "WHERE observation_id = :o AND extractor_version = :v"),
                           {"o": obs.observation_id, "v": VERSION}).all()
     assert labels == [("positive", "conditional")]
+
+
+def test_failed_write_keeps_the_previous_result(conn, repo):
+    extractor = RulesExtractor(repo.load_brands(), load_config())
+    extractor.version = VERSION
+    [obs] = repo.select_observations(VERSION, ["openai"], limit=1)
+    good = extractor.extract(obs)
+    repo.save(good)
+    before = counts(conn, obs.observation_id)
+
+    broken = replace(good, mentions=[replace(good.mentions[0], brand_id="not_a_brand")])
+    with pytest.raises(IntegrityError):
+        repo.save(broken)  # delete + inserts run in one transaction, so the delete is undone too
+    assert counts(conn, obs.observation_id) == before

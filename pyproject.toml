@@ -6,3 +6,6 @@ requires-python = ">=3.10"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "scripts"]
+markers = [
+    "db: uses the real database inside a rolled-back transaction; skipped unless RUN_DB_TESTS=1",
+]
