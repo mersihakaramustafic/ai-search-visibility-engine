@@ -26,6 +26,7 @@ class Answer:
     mentioned: frozenset[str]
     recommended: frozenset[str]  # recommendation other than 'none'
     cited: frozenset[str]  # at least one citation attributed to the brand's own site
+    domains: frozenset[str] = frozenset()  # cited domains that belong to no tracked brand
 
 
 def matched_queries(answers: Iterable[Answer]) -> list[Answer]:
