@@ -70,6 +70,18 @@ From the 16-answer pilot, checked by hand, and the full run:
 - Gemini returns only a domain per citation, not a URL path, so citations on shared domains (zoho.com, freshworks.com, monday.com) are left without a brand. Compare per-brand citation counts between providers with that in mind.
 - `classification_estimated_cost_usd` depends on unverified prices.
 
+## Detect visibility gaps
+
+Compares the target brand with its competitors per provider and intent, using mention, recommendation and citation rates, and lists each gap with its supporting queries and cited domains. Read-only; needs `DATABASE_URL`.
+
+```bash
+.venv/bin/python scripts/visibility_gaps.py                       # primary brand (HubSpot), extractor_version from the config
+.venv/bin/python scripts/visibility_gaps.py --target pipedrive    # any brand id
+.venv/bin/python scripts/visibility_gaps.py --version rules-llm-v3 --output-dir reports
+```
+
+Writes `reports/visibility_gaps_<target>_<version>.json` and `.md`. See [docs/visibility_gaps.md](docs/visibility_gaps.md) for the rules and their limits.
+
 ## Tests
 
 ```bash
