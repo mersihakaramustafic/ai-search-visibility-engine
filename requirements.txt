@@ -7,3 +7,4 @@ python-dotenv==1.2.4
 openai==3.34.0
 google-genai==2.31.0
 jsonschema==4.23.0
+pydantic==2.14.1
