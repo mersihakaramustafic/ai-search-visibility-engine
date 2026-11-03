@@ -1,0 +1,27 @@
+# Settings for recommendation generation from visibility gaps.
+
+# Bump whenever the prompt, schema or model changes; results are kept per version.
+generator_version: recs-v2
+
+llm:
+  provider: gemini
+  model: gemini-3.8-flash  # override with RECOMMENDATION_MODEL
+  api_key_env: GEMINI_API_KEY
+  timeout_seconds: 120
+  max_output_tokens: 8000
+  temperature: 0.2
+  prompt_version: r1
+  schema_version: s1
+
+retry:
+  max_attempts: 3
+  initial_backoff_seconds: 2
+  max_backoff_seconds: 60
+
+# USD per 1M tokens, Standard paid tier, from aistudio.google.com/docs/pricing (checked 2026-11-20).
+# Thinking tokens are billed as output. These rates double on 2027-01-01 (1.50 / 0.15 / 7.50).
+pricing:
+  gemini-3.8-flash:
+    input: 0.75
+    cached_input: 0.075
+    output: 3.75
