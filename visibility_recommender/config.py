@@ -12,6 +12,7 @@ import yaml
 
 from visibility_collector.config import RetryConfig
 from visibility_extractor.config import VERSION_RE, Price, parse_pricing, parse_retry
+from visibility_recommender.scoring import ScoringConfig, parse_scoring
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "recommendation.yaml"
@@ -43,6 +44,7 @@ class RecommendationConfig:
     llm: GeneratorConfig
     retry: RetryConfig = field(default_factory=RetryConfig)
     pricing: dict[str, Price] = field(default_factory=dict)
+    scoring: ScoringConfig | None = None
 
     @property
     def price(self) -> Price | None:
@@ -94,9 +96,10 @@ def parse_config(raw: Any, env: Mapping[str, str] | None = None) -> Recommendati
     )
     retry = parse_retry(raw.get("retry"), errors)
     pricing = parse_pricing(raw.get("pricing"), errors)
+    scoring = parse_scoring(raw.get("scoring"), errors, VERSION_RE)
     if errors:
         raise RecommendationConfigError(errors)
-    return RecommendationConfig(version, generator, retry, pricing)
+    return RecommendationConfig(version, generator, retry, pricing, scoring)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> RecommendationConfig:

@@ -25,3 +25,36 @@ pricing:
     input: 0.75
     cached_input: 0.075
     output: 3.75
+
+# Priority score (0-100) for each validated recommendation; see visibility_recommender/scoring.py.
+# score = 100 x (impact + evidence + relevance + effort parts, weighted). Each part is 0..1.
+# The LLM's own ratings (expected_impact, confidence, effort) can move a score by at most ~21.5 points.
+# Bump the version whenever any number here changes; scores are kept per version.
+scoring:
+  version: p1
+  weights: {impact: 0.35, evidence: 0.30, relevance: 0.25, effort: 0.10}
+  impact:
+    weights: {gap: 0.6, reach: 0.2, llm_impact: 0.2}
+    full_gap: 0.40  # rate difference that earns the full gap score; the 0.10 minimum gap scores 0.25
+  evidence:
+    weights: {coverage: 0.6, sample: 0.25, llm_confidence: 0.15}
+    # Added up for each kind of evidence a recommendation cites (competitor_metric = another brand's metric).
+    kinds: {citation: 0.35, domain: 0.25, query: 0.25, competitor_metric: 0.15}
+    full_sample_queries: 20  # queries per provider and intent for the full sample score
+  relevance:
+    weights: {fit: 0.4, intent: 0.3, metric: 0.3}
+    # Editorial, community and directory actions that cite no domain or citation get their fit multiplied by this.
+    offsite_without_source: 0.5
+    fit:  # how well each recommendation category suits each gap type
+      competitor_cited_more:       {owned_content_optimization: 0.8, editorial_outreach: 1.0, community_visibility: 0.6, directory_listing: 1.0}
+      competitor_recommended_more: {owned_content_optimization: 0.8, editorial_outreach: 1.0, community_visibility: 0.8, directory_listing: 0.9}
+      target_mentioned_less:       {owned_content_optimization: 0.6, editorial_outreach: 1.0, community_visibility: 1.0, directory_listing: 0.8}
+      weaker_on_provider:          {owned_content_optimization: 1.0, editorial_outreach: 0.8, community_visibility: 0.8, directory_listing: 0.8}
+    intent_values:  # commercial value of each query intent
+      category_discovery: 1.0
+      pricing_purchase: 1.0
+      brand_comparison: 0.9
+      use_case: 0.8
+      features_integrations: 0.7
+    metric_values: {recommendation_rate: 1.0, citation_rate: 0.8, mention_rate: 0.7}
+  bands: {high: 70, medium: 50}

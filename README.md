@@ -1,86 +1,43 @@
 # ai-search-visibility-engine
 
-Portfolio project for analyzing AI search visibility: compare how OpenAI and Google Gemini answer the same CRM-buying questions, measure brand mentions, rankings, citations, and competitor presence, and eventually recommend actions to improve a brand's visibility in AI-generated answers. The first industry is B2B SaaS CRM, with HubSpot as the primary tracked brand.
+Portfolio project for analyzing AI search visibility. It asks OpenAI and Google Gemini the same CRM-buying questions, measures brand mentions, recommendations and citations, finds where a brand is less visible than its competitors, and turns those gaps into evidence-backed, prioritized recommendations. The first industry is B2B SaaS CRM, with HubSpot as the tracked brand.
 
+> **Status: paused (2026-11-20).** Stages 1–4 of the pipeline work end to end. Stage 5 (recommendations) is about half done. See [Future plan](#future-plan).
 
-## Generate the initial datasets
+## Pipeline
+
+| Stage | What it does | Code | Status |
+|---|---|---|---|
+| 1. Dataset | 100 authored queries over 5 intents, brands, collection manifest | `scripts/generate_initial_dataset.py` | done |
+| 2. Collection | Answers from OpenAI and Gemini, stored in Supabase Postgres | `visibility_collector/`, `scripts/collect_responses.py` | done |
+| 3. Extraction | Brand mentions and citations, with rules first and then an LLM for sentiment, recommendation and ambiguous names | `visibility_extractor/`, `scripts/extract_responses.py` | done (`rules-llm-v3`) |
+| 4. Gap analysis | Mention, recommendation and citation rates, plus visibility gaps against competitors and between providers | `visibility_analysis/`, `scripts/visibility_gaps.py` | done |
+| 5. Recommendations | Evidence packs → Gemini recommendations → validation → priority score | `visibility_recommender/` | partly done |
+
+Details: [dataset](docs/dataset_design.md) · [collection](docs/collection_pipeline.md) · [extraction](docs/extract_brands.md) · [gaps](docs/visibility_gaps.md)
+
+## Setup
 
 ```bash
 uv venv && uv pip install -r requirements.txt
-.venv/bin/python scripts/generate_initial_dataset.py
+cp .env.example .env    # DATABASE_URL, OPENAI_API_KEY, GEMINI_API_KEY
 ```
 
-This writes four CSVs to `data/processed/` (brands, queries, collection manifest, synthetic recommendation candidates), validates them, and prints a summary. It runs offline and needs no API keys. Settings live in `configs/dataset.yaml`.
+The Supabase project may be paused after inactivity. If you see `tenant/user ... not found`, restore it in the Supabase dashboard.
 
-Verify that the committed files are up to date without writing anything:
-
-```bash
-.venv/bin/python scripts/generate_initial_dataset.py --check
-```
-
-## Collect AI answers
-
-Needs `DATABASE_URL`, `OPENAI_API_KEY` and `GEMINI_API_KEY` in `.env` (see `.env.example`).
+## Run
 
 ```bash
-.venv/bin/python -m alembic upgrade head
+.venv/bin/python scripts/generate_initial_dataset.py           # offline, writes data/processed/
+.venv/bin/python -m alembic upgrade 0006_classification_output # not "head": 0007 has not been tested yet (see below)
 .venv/bin/python scripts/import_dataset.py
-.venv/bin/python scripts/collect_responses.py --mode pilot --dry-run   # preview, no API calls
-.venv/bin/python scripts/collect_responses.py --mode pilot             # 3-5 queries per provider
-.venv/bin/python scripts/collect_responses.py --mode full              # all remaining requests
+.venv/bin/python scripts/collect_responses.py --mode pilot     # add --dry-run first; --mode full for everything
+.venv/bin/python scripts/extract_responses.py                  # see docs/extract_brands.md for flags
+.venv/bin/python scripts/visibility_gaps.py                    # writes reports/visibility_gaps_<target>_<version>.{json,md}
+.venv/bin/python scripts/check_recommendation_model.py --probe # one paid Gemini call (~$0.003)
 ```
 
-Settings are in `configs/collection.yaml`. See [docs/collection_pipeline.md](docs/collection_pipeline.md) for retries, what is recorded, and SQL to verify results in Supabase.
-
-See [docs/dataset_design.md](docs/dataset_design.md) for what each file means and which data is authored, planned, synthetic, or collected.
-
-## Extract brand mentions and citations
-
-Reads the stored answers (Gemini answers are never sent to Gemini again) and writes `observation_extractions`, `brand_mentions` and `citations`, all tagged with `extractor_version`. Needs `DATABASE_URL` and `OPENAI_API_KEY`.
-
-1. Rules first, in Python: brand aliases (whole words, longest match, exclusions such as "Zoho Desk"), citations from the provider's metadata (OpenAI `url_citations`, Gemini grounding chunks), and URLs written in the answer, stored separately as `response_text`.
-2. Then one GPT-5.6 Luna call per answer that has something to classify: sentiment and recommendation per brand, and whether ambiguous words ("Close", "Monday", "Freshworks") are the brand. The output must match `schemas/brand_classification.schema.json`, and every quote must appear in the answer, or it is retried and finally marked `failed`.
-
-
-Check the pilot by hand before the full run, e.g. in Supabase:
-
-```sql
-select m.observation_id, m.brand_id, m.sentiment, m.recommendation, m.classification_evidence
-from brand_mentions m
-where m.extractor_version = 'rules-llm-v3'
-order by m.observation_id, m.first_mention_rank;
-```
-
-Settings are in `configs/extraction.yaml`:
-
-- `extractor_version`: bump it whenever rules, prompt or schema change. Each version's results are kept side by side; rerunning the same version replaces its rows and never duplicates them.
-- `strategy`: `rules_only` or `rules_and_llm` per source provider.
-- `llm`: model (override with `EXTRACTION_MODEL`), reasoning effort, `prompt_version` (prompts are kept in `visibility_extractor/llm.py`), concurrency. The run stops if the model is not available; it never switches to another one.
-- `retry`: attempts per answer; rate limits and timeouts back off, honouring `Retry-After`.
-- `pricing`: USD per 1M tokens, used for `classification_estimated_cost_usd`. Taken from third-party listings; check them on OpenAI's pricing page.
-
-### Data quality (rules-llm-v3)
-
-From the 16-answer pilot, checked by hand, and the full run:
-
-- Ambiguous names: all 30 pilot decisions were plausible; the LLM accepted 96% of ambiguous occurrences overall. "monday.com" used for the platform is counted as monday CRM.
-- Sentiment agrees across runs on 98–100% of mentions.
-- Recommendation: between pilot runs and prompt versions, "recommended or not" stayed the same for 93–100% of mentions, the exact `primary` / `conditional` / `none` label for only 84–96%. Prefer "recommended or not" (`recommendation <> 'none'`, `target_brand_recommended`) for analysis.
-- 4 of 458 answers failed: the model turned table rows into headings, joined table cells, gave an empty quote, or quoted more than 300 characters. They have no mentions or citations stored.
-- Gemini returns only a domain per citation, not a URL path, so citations on shared domains (zoho.com, freshworks.com, monday.com) are left without a brand. Compare per-brand citation counts between providers with that in mind.
-- `classification_estimated_cost_usd` depends on unverified prices.
-
-## Detect visibility gaps
-
-Compares the target brand with its competitors per provider and intent, using mention, recommendation and citation rates, and lists each gap with its supporting queries and cited domains. Read-only; needs `DATABASE_URL`.
-
-```bash
-.venv/bin/python scripts/visibility_gaps.py                       # primary brand (HubSpot), extractor_version from the config
-.venv/bin/python scripts/visibility_gaps.py --target pipedrive    # any brand id
-.venv/bin/python scripts/visibility_gaps.py --version rules-llm-v3 --output-dir reports
-```
-
-Writes `reports/visibility_gaps_<target>_<version>.json` and `.md`. See [docs/visibility_gaps.md](docs/visibility_gaps.md) for the rules and their limits.
+Each stage has its settings in `configs/*.yaml`. Every LLM step records a version label (`extractor_version`, `generator_version`, `scoring_version`), so results from different versions are kept side by side instead of overwritten.
 
 ## Tests
 
@@ -89,4 +46,33 @@ Writes `reports/visibility_gaps_<target>_<version>.json` and `.md`. See [docs/vi
 RUN_DB_TESTS=1 .venv/bin/python -m pytest -m db     # real database, every test rolled back
 ```
 
-There are no automated live API tests: `scripts/check_extraction_model.py --probe` makes one real call on demand.
+## Known data caveats
+
+- Use "recommended or not" rather than the exact `primary` / `conditional` label: the exact label is stable for only 84–96% of mentions.
+- Gemini citations have only a domain, not a full URL, so citations to domains several brands share (zoho.com, freshworks.com, monday.com) aren't attributed to any brand.
+- Cost figures come from list prices checked on the dates noted in the configs.
+
+## Future plan
+
+What Stage 5 (`visibility_recommender/`) has so far:
+
+- **Done:**
+  - evidence packs from gaps (`evidence.py`)
+  - Pydantic output, with validation against the evidence pack (`output.py`)
+  - Gemini client and runner with retries (`llm.py`, `runner.py`), using `gemini-3.8-flash`, `recs-v2`
+  - deterministic priority score `p1`: impact 35 / evidence 30 / relevance 25 / effort 10, all weights in `configs/recommendation.yaml` (`scoring.py`)
+- **Written but not tested:** migration `0007_recommendations` (generations, LLM candidates, scores, expert feedback, implementations). Test it against the database in a rolled-back transaction before running `alembic upgrade head`.
+
+Still to do:
+
+1. **Persistence:** a `RecommendationRepository` that saves generations, candidates and scores, and refuses a second generation for the same opportunity and `generator_version`. Plus database tests, using the same pattern as `tests/test_extraction_repository.py`.
+2. **Run script:** `scripts/generate_recommendations.py` loads the gaps, builds evidence packs, calls Gemini, scores and saves the results, and writes a ranked report (JSON and Markdown). Do a dry run and a small pilot before running on all the HubSpot gaps.
+3. **Review and feedback:** rate the recommendations in `recommendation_feedback` (useful, optional 1–5 rating, reason codes, the rank you saw them at). Record what was carried out in `recommendation_implementations`.
+4. **ML ranking (`scoring_version: m1`):** learn a score from the expert ratings, using the stored score features.
+   - Baseline: the `p1` formula.
+   - Models: start with logistic regression, then try gradient-boosted trees or LambdaRank.
+   - Evaluate with NDCG@k and precision@k on held-out opportunities, and use the model only if it beats `p1`.
+   - Data needed: one run gives about 50–120 recommendations, so expect several runs or brands before you have the few hundred ratings this needs.
+5. **Outcome labels (later):** collect answers again some time after a recommendation was implemented, and compare visibility before and after, as a stronger label than expert opinion.
+
+Pricing note: Gemini 3.8 Flash costs $0.75 / $3.75 per 1M input / output tokens until 2026-12-31, and **twice that from 2027-01-01**. Update `pricing` in `configs/recommendation.yaml` before any run in 2027.
